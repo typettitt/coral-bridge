@@ -50,7 +50,7 @@ With Edge TPU acceleration:
 ### 1. Clone and Setup
 
 ```powershell
-git clone https://github.com/yourusername/coral-bridge.git
+git clone https://github.com/typettitt/coral-bridge.git
 cd coral-bridge
 ```
 
