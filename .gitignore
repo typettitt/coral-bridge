@@ -1,0 +1,48 @@
+# Build outputs
+bin/
+obj/
+publish/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.cache
+
+# Claude Code internal files
+.claude/
+
+# Old Python implementation docs (deprecated)
+CLAUDE.md
+
+# Test infrastructure (not needed for users)
+docker/
+docker-compose.yml
+
+# Non-Windows Edge TPU binaries (Windows-only project)
+runtime/edgetpu_runtime/libedgetpu/direct/aarch64/
+runtime/edgetpu_runtime/libedgetpu/direct/armv7a/
+runtime/edgetpu_runtime/libedgetpu/direct/k8/
+runtime/edgetpu_runtime/libedgetpu/direct/darwin_arm64/
+runtime/edgetpu_runtime/libedgetpu/direct/darwin_x86_64/
+runtime/edgetpu_runtime/libedgetpu/throttled/aarch64/
+runtime/edgetpu_runtime/libedgetpu/throttled/armv7a/
+runtime/edgetpu_runtime/libedgetpu/throttled/k8/
+runtime/edgetpu_runtime/libedgetpu/throttled/darwin_arm64/
+runtime/edgetpu_runtime/libedgetpu/throttled/darwin_x86_64/
+runtime/edgetpu_runtime/install.sh
+runtime/edgetpu_runtime/uninstall.sh
+runtime/edgetpu_runtime/libedgetpu/edgetpu-accelerator.rules
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Large binary files (users download separately)
+*.tflite
+runtime/tensorflowlite_c.dll
