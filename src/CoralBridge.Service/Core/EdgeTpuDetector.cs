@@ -12,6 +12,7 @@ namespace CoralBridge.Core;
 public sealed class EdgeTpuDetector : IObjectDetector
 {
     private readonly ILogger<EdgeTpuDetector> _logger;
+    private readonly StatsCollector? _statsCollector;
     private readonly TfLiteModelHandle _model;
     private readonly TfLiteOptionsHandle _options;
     private readonly TfLiteInterpreterHandle _interpreter;
@@ -24,9 +25,10 @@ public sealed class EdgeTpuDetector : IObjectDetector
     public int InputWidth { get; } = 300;
     public int InputHeight { get; } = 300;
 
-    public EdgeTpuDetector(string modelPath, ILogger<EdgeTpuDetector> logger)
+    public EdgeTpuDetector(string modelPath, ILogger<EdgeTpuDetector> logger, StatsCollector? statsCollector = null)
     {
         _logger = logger;
+        _statsCollector = statsCollector;
         ModelName = Path.GetFileName(modelPath);
 
         // Initialize native library resolver
@@ -48,13 +50,15 @@ public sealed class EdgeTpuDetector : IObjectDetector
         _options.SetNumThreads(Environment.ProcessorCount);
 
         // Try to create Edge TPU delegate
+        string? runtimeVersion = null;
+        string deviceTypeStr = "CPU";
         try
         {
             _logger.LogInformation("Attempting to initialize Edge TPU...");
 
             // Log Edge TPU version
-            var version = EdgeTpuInterop.GetVersion();
-            _logger.LogInformation("Edge TPU runtime version: {Version}", version ?? "unknown");
+            runtimeVersion = EdgeTpuInterop.GetVersion();
+            _logger.LogInformation("Edge TPU runtime version: {Version}", runtimeVersion ?? "unknown");
 
             // List available devices
             var devices = EdgeTpuInterop.ListDevices();
@@ -75,6 +79,7 @@ public sealed class EdgeTpuDetector : IObjectDetector
             {
                 _options.AddDelegate(_edgeTpuDelegate.DangerousGetHandle());
                 UsingEdgeTpu = true;
+                deviceTypeStr = deviceType?.ToString() ?? "Unknown";
                 _logger.LogInformation("Edge TPU delegate created and added to options (device type: {DeviceType})", deviceType);
             }
             else
@@ -131,6 +136,9 @@ public sealed class EdgeTpuDetector : IObjectDetector
         }
 
         _logger.LogInformation("Detector initialized - Using Edge TPU: {UsingEdgeTpu}", UsingEdgeTpu);
+
+        // Set device info on stats collector
+        _statsCollector?.SetDeviceInfo(deviceTypeStr, UsingEdgeTpu, ModelName, runtimeVersion);
     }
 
     public DetectionResult Detect(
@@ -151,8 +159,12 @@ public sealed class EdgeTpuDetector : IObjectDetector
         try
         {
             long inferenceTimeMs;
+            List<Detection> detections;
 
             // Synchronize inference (TFLite interpreter is not thread-safe)
+            // CRITICAL: Output tensor reading MUST be inside the lock because
+            // GetOutputTensorDataAsFloat returns a span pointing to internal
+            // TFLite memory that would be corrupted by concurrent inference.
             lock (_inferenceLock)
             {
                 // Copy input data to tensor
@@ -165,60 +177,67 @@ public sealed class EdgeTpuDetector : IObjectDetector
                 inferenceTimeMs = sw.ElapsedMilliseconds;
 
                 _logger.LogDebug("Inference completed in {Ms}ms", inferenceTimeMs);
-            }
 
-            // Parse output tensors
-            // SSD MobileNet post-processed model outputs:
-            // 0: Boxes [1, N, 4] - ymin, xmin, ymax, xmax (normalized 0-1)
-            // 1: Classes [1, N] - class indices
-            // 2: Scores [1, N] - confidence scores
-            // 3: Count [1] - number of detections
+                // Parse output tensors (must be inside lock - spans point to internal memory)
+                // SSD MobileNet post-processed model outputs:
+                // 0: Boxes [1, N, 4] - ymin, xmin, ymax, xmax (normalized 0-1)
+                // 1: Classes [1, N] - class indices
+                // 2: Scores [1, N] - confidence scores
+                // 3: Count [1] - number of detections
 
-            var boxes = _interpreter.GetOutputTensorDataAsFloat(0);
-            var classes = _interpreter.GetOutputTensorDataAsFloat(1);
-            var scores = _interpreter.GetOutputTensorDataAsFloat(2);
-            var countData = _interpreter.GetOutputTensorDataAsFloat(3);
+                var boxes = _interpreter.GetOutputTensorDataAsFloat(0);
+                var classes = _interpreter.GetOutputTensorDataAsFloat(1);
+                var scores = _interpreter.GetOutputTensorDataAsFloat(2);
+                var countData = _interpreter.GetOutputTensorDataAsFloat(3);
 
-            var count = (int)countData[0];
-            var detections = new List<Detection>();
+                var count = (int)countData[0];
+                detections = new List<Detection>(count);
 
-            for (var i = 0; i < count; i++)
-            {
-                var score = scores[i];
-                if (score < confidenceThreshold)
+                for (var i = 0; i < count; i++)
                 {
-                    continue;
+                    var score = scores[i];
+                    if (score < confidenceThreshold)
+                    {
+                        continue;
+                    }
+
+                    var classId = (int)classes[i];
+                    var label = CocoLabels.GetLabel(classId);
+
+                    // Box format: ymin, xmin, ymax, xmax (normalized)
+                    var ymin = boxes[i * 4 + 0];
+                    var xmin = boxes[i * 4 + 1];
+                    var ymax = boxes[i * 4 + 2];
+                    var xmax = boxes[i * 4 + 3];
+
+                    // Scale to original image dimensions
+                    detections.Add(new Detection
+                    {
+                        Label = label,
+                        Confidence = score,
+                        XMin = (int)(xmin * originalWidth),
+                        YMin = (int)(ymin * originalHeight),
+                        XMax = (int)(xmax * originalWidth),
+                        YMax = (int)(ymax * originalHeight)
+                    });
                 }
-
-                var classId = (int)classes[i];
-                var label = CocoLabels.GetLabel(classId);
-
-                // Box format: ymin, xmin, ymax, xmax (normalized)
-                var ymin = boxes[i * 4 + 0];
-                var xmin = boxes[i * 4 + 1];
-                var ymax = boxes[i * 4 + 2];
-                var xmax = boxes[i * 4 + 3];
-
-                // Scale to original image dimensions
-                detections.Add(new Detection
-                {
-                    Label = label,
-                    Confidence = score,
-                    XMin = (int)(xmin * originalWidth),
-                    YMin = (int)(ymin * originalHeight),
-                    XMax = (int)(xmax * originalWidth),
-                    YMax = (int)(ymax * originalHeight)
-                });
             }
 
             _logger.LogDebug("Found {Count} detection(s) above threshold {Threshold}",
                 detections.Count, confidenceThreshold);
+
+            // Record successful inference
+            _statsCollector?.RecordInference(inferenceTimeMs, success: true);
 
             return DetectionResult.Ok(detections, inferenceTimeMs);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Detection failed");
+
+            // Record failed inference
+            _statsCollector?.RecordInference(0, success: false);
+
             return DetectionResult.Fail($"Detection failed: {ex.Message}");
         }
     }

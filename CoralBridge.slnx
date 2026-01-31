@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/CoralBridge.Service/CoralBridge.Service.csproj" />
+    <Project Path="src/CoralBridge.Cli/CoralBridge.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CoralBridge.Service.Tests/CoralBridge.Service.Tests.csproj" />

@@ -35,14 +35,31 @@ public class Program
         // Resolve model path relative to content root
         if (!Path.IsPathRooted(modelPath))
         {
-            modelPath = Path.Combine(builder.Environment.ContentRootPath, modelPath);
+            var resolvedPath = Path.Combine(builder.Environment.ContentRootPath, modelPath);
+
+            // If path doesn't exist and looks like a dev path (../../), try the deployment path
+            if (!File.Exists(resolvedPath) && modelPath.Contains(".."))
+            {
+                var modelFileName = Path.GetFileName(modelPath);
+                var deploymentPath = Path.Combine(builder.Environment.ContentRootPath, "models", modelFileName);
+                if (File.Exists(deploymentPath))
+                {
+                    resolvedPath = deploymentPath;
+                }
+            }
+
+            modelPath = resolvedPath;
         }
+
+        // Register the stats collector as a singleton
+        builder.Services.AddSingleton<StatsCollector>();
 
         // Register the object detector as a singleton
         builder.Services.AddSingleton<IObjectDetector>(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<EdgeTpuDetector>>();
-            return new EdgeTpuDetector(modelPath, logger);
+            var statsCollector = sp.GetRequiredService<StatsCollector>();
+            return new EdgeTpuDetector(modelPath, logger, statsCollector);
         });
 
         var app = builder.Build();

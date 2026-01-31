@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json.Serialization;
 using CoralBridge.Core;
 using CoralBridge.Processing;
@@ -16,8 +17,12 @@ public static class Endpoints
     {
         app.MapGet("/", HandleRoot);
         app.MapGet("/health", HandleHealth);
+        app.MapGet("/stats", HandleStats);
         app.MapPost("/v1/vision/detection", HandleDetection);
     }
+
+    private static readonly string ServiceVersion =
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 
     /// <summary>
     /// Root endpoint - returns service info
@@ -27,7 +32,7 @@ public static class Endpoints
         return Results.Ok(new ServiceInfo
         {
             Name = "CoralBridge",
-            Version = "1.0.0",
+            Version = ServiceVersion,
             Status = "running"
         });
     }
@@ -40,11 +45,20 @@ public static class Endpoints
         return Results.Ok(new HealthResponse
         {
             Status = "healthy",
+            Version = ServiceVersion,
             Model = detector.ModelName,
             UsingEdgeTpu = detector.UsingEdgeTpu,
             InputWidth = detector.InputWidth,
             InputHeight = detector.InputHeight
         });
+    }
+
+    /// <summary>
+    /// Statistics endpoint - returns inference metrics
+    /// </summary>
+    private static IResult HandleStats(StatsCollector stats)
+    {
+        return Results.Ok(stats.GetSnapshot());
     }
 
     /// <summary>
@@ -164,6 +178,9 @@ public record HealthResponse
 {
     [JsonPropertyName("status")]
     public required string Status { get; init; }
+
+    [JsonPropertyName("version")]
+    public required string Version { get; init; }
 
     [JsonPropertyName("model")]
     public required string Model { get; init; }
