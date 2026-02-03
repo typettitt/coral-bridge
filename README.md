@@ -39,6 +39,55 @@ With Edge TPU acceleration:
 - Handles multiple concurrent requests
 - Runs as a lightweight Windows service
 
+## CLI Tool
+
+CoralBridge includes `coralctl`, a command-line tool for monitoring the service.
+
+![CoralBridge CLI](assets/coral-cli-screen-grab.png)
+
+### Installation
+
+```powershell
+# Build the CLI
+dotnet build src/CoralBridge.Cli
+
+# Run directly
+dotnet run --project src/CoralBridge.Cli -- <command>
+
+# Or publish and add to PATH
+dotnet publish src/CoralBridge.Cli -c Release -o ~/.coralctl
+```
+
+### Commands
+
+```powershell
+# Check service health
+coralctl health
+
+# View inference statistics
+coralctl stats
+
+# Live monitoring dashboard (updates every second)
+coralctl stats --watch
+
+# Show temperature in Fahrenheit
+coralctl stats --watch --fahrenheit
+
+# Connect to a different service URL
+coralctl stats --url http://192.168.1.100:5555
+
+# Show CLI and service versions
+coralctl version
+```
+
+### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--url` | `-u` | Service URL (default: `http://localhost:5555`) |
+| `--watch` | `-w` | Continuously monitor stats |
+| `--fahrenheit` | `-f` | Display temperature in Fahrenheit |
+
 ## Requirements
 
 - Windows 10/11 (x64)
