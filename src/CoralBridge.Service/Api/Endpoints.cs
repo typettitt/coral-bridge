@@ -67,12 +67,14 @@ public static class Endpoints
     private static async Task<IResult> HandleDetection(
         HttpRequest request,
         IObjectDetector detector,
+        IConfiguration config,
         ILogger<Program> logger)
     {
         try
         {
-            // Extract confidence threshold from form if provided
-            var confidenceThreshold = 0.45f;
+            // Extract confidence threshold from form if provided, fall back to configured default
+            var defaultConfidence = config.GetValue("CoralBridge:DefaultConfidence", 0.45f);
+            var confidenceThreshold = defaultConfidence;
             if (request.HasFormContentType)
             {
                 var form = await request.ReadFormAsync();
